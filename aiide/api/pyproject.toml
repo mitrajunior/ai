@@ -1,0 +1,18 @@
+[project]
+name = "aiide-api"
+version = "0.1.0"
+description = "FastAPI backend for AIIDE platform"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi[standard]",
+  "docker",
+  "pydantic-settings",
+  "psycopg[binary]",
+  "redis",
+  "boto3",
+  "requests"
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
