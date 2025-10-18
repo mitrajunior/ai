@@ -1,0 +1,23 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "archMap": [],
+  "syscalls": [
+    {
+      "names": [
+        "read",
+        "write",
+        "exit",
+        "futex",
+        "nanosleep",
+        "clock_gettime",
+        "brk",
+        "mmap",
+        "munmap",
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "sigaltstack"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}

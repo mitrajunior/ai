@@ -1,0 +1,110 @@
+name: Build and Push Containers
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to apply to all images"
+        required: true
+        default: latest
+      registry:
+        description: "Container registry hostname (e.g. ghcr.io)"
+        required: true
+        default: ghcr.io
+      namespace:
+        description: "Image namespace/organization (leave blank to use <owner>/<repo>)"
+        required: false
+        default: ""
+      push:
+        description: "Push images to the registry after building"
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ${{ inputs.registry }}
+      TAG: ${{ inputs.tag }}
+    strategy:
+      matrix:
+        include:
+          - name: api
+            context: aiide/api
+            dockerfile: aiide/api/Dockerfile
+          - name: web
+            context: aiide/web
+            dockerfile: aiide/web/Dockerfile
+          - name: yjs
+            context: aiide/yjs
+            dockerfile: aiide/yjs/Dockerfile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Derive image namespace
+        id: namespace
+        run: |
+          if [ -n "${{ inputs.namespace }}" ]; then
+            IMAGE_NAMESPACE='${{ inputs.namespace }}'
+          else
+            IMAGE_NAMESPACE="${GITHUB_REPOSITORY,,}"
+          fi
+          echo "namespace=$IMAGE_NAMESPACE" >> "$GITHUB_OUTPUT"
+
+      - name: Configure registry credentials
+        id: registry-creds
+        env:
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          FALLBACK_USERNAME: ${{ github.actor }}
+          FALLBACK_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          USERNAME="$REGISTRY_USERNAME"
+          PASSWORD="$REGISTRY_PASSWORD"
+          if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
+            USERNAME="$FALLBACK_USERNAME"
+            PASSWORD="$FALLBACK_PASSWORD"
+          fi
+          echo "username=$USERNAME" >> "$GITHUB_OUTPUT"
+          echo "password=$PASSWORD" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to registry
+        if: inputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ steps.registry-creds.outputs.username }}
+          password: ${{ steps.registry-creds.outputs.password }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.namespace.outputs.namespace }}-${{ matrix.name }}
+          tags: |
+            type=raw,value=${{ env.TAG }}
+            type=sha
+
+      - name: Build and (optionally) push ${{ matrix.name }} image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ inputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summarize image reference
+        run: |
+          echo "::notice title=${{ matrix.name }} image::${{ env.REGISTRY }}/${{ steps.namespace.outputs.namespace }}-${{ matrix.name }}:${{ env.TAG }}"
